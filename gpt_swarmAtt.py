@@ -32,11 +32,11 @@ min_lr = learning_rate/10 # minimum learning rate, should be ~= learning_rate/10
 batch_size = 64 # 64 # how many independent sequences will we process in parallel?
 block_size = 256 # 256 # what is the maximum context length for predictions?
 n_embd = 64*4 # 64*4 
-n_head = 4 # 4
+n_head = 8 # 4
 n_layer = 14 # 16
 #inf_steps = list(range(1,5)) + [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 720] # try 1,2,3,8,16,32
-inf_steps = range(1,n_head+1) # stride in the influence in the different heads
-#inf_steps = [1,2,3,4,1,2,3,4]
+#inf_steps = range(1,n_head+1) # stride in the influence in the different heads
+inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
 # ------------
 

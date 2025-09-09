@@ -32,16 +32,16 @@ min_lr = learning_rate/10 # minimum learning rate, should be ~= learning_rate/10
 batch_size = 64 # 64 # how many independent sequences will we process in parallel?
 block_size = 256 # 256 # what is the maximum context length for predictions?
 n_embd = 64*4 # 64*4 
-n_head = 8 # 4
+n_head = 4 # 4
 n_layer = 14 # 16
 #inf_steps = list(range(1,5)) + [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 720] # try 1,2,3,8,16,32
-#inf_steps = range(1,n_head+1) # stride in the influence in the different heads
-inf_steps = [1,2,3,4,5,1,2,3]
+inf_steps = range(1,n_head+1) # stride in the influence in the different heads
+#inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
 # ------------
 
 # -----------------------------------------------------------------------------
-config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))] # only save hyperparameters that are int, float, bool or str
+config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, list))] # only save hyperparameters that are int, float, bool, str or list
 config = {k: globals()[k] for k in config_keys} # for logging
 # -----------------------------------------------------------------------------
 
@@ -358,10 +358,3 @@ def save_training_log(logs, config, filename="training_log.txt"):
             f.write(f"{k}: {v}\n")
 
 save_training_log(logs,config)
-
-# Example usage:
-# Collect logs during training:
-# logs = []
-# logs.append(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, time {curr_time:.2f} s")
-# At the end, call:
-# save_training_log(logs, config, filename="training_log.txt")

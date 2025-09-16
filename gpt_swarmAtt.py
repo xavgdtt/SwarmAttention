@@ -10,7 +10,7 @@ out_dir = 'swarmAtt_checkpoints'
 always_save_checkpoint = False # if True, always save a checkpoint after each eval
 
 # adamw optimizer
-learning_rate = 2e-4 # max learning rate
+learning_rate = 3e-4 # max learning rate
 max_iters = 3000 # total number of training iterations
 weight_decay = 1e-2
 beta1 = 0.9
@@ -29,15 +29,17 @@ min_lr = learning_rate/10 # minimum learning rate, should be ~= learning_rate/10
 """
 
 # hyperparameters
-batch_size = 64 # 64 # how many independent sequences will we process in parallel?
+batch_size = 32 # 64 # how many independent sequences will we process in parallel?
 block_size = 256 # 256 # what is the maximum context length for predictions?
-n_embd = 64*4 # 64*4 
-n_head = 8 # 4
-n_layer = 14 # 16
+n_embd = 32*4 # 64*4 
+n_head = 4 # 8
+n_layer = 6 # 14
 #inf_steps = list(range(1,5)) + [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 720] # try 1,2,3,8,16,32
 #inf_steps = range(1,n_head+1) # stride in the influence in the different heads
 inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
+formation_loss_weight = 100 # weight of the formation loss in the total loss
+formation_target_distance = 0.001 # 1 (tested and does not improve wrt to without, should I set them to be close? like 1e-3?) # target distance for the formation loss
 # ------------
 
 # -----------------------------------------------------------------------------
@@ -79,16 +81,21 @@ def get_batch(split):
 @torch.no_grad()
 def estimate_loss():
     out = {}
+    out_main_losses = {}
+    out_formation_losses = {}
     model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
+        main_losses = torch.zeros(eval_iters)
+        formation_losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
+            logits, loss, main_loss, formation_loss = model(X, Y)
+            # record losses separately for monitoring
+            losses[k], main_losses[k], formation_losses[k] = loss.item(), main_loss.item(), formation_loss.item()
+        out[split], out_main_losses[split], out_formation_losses[split] = losses.mean(), main_losses.mean(), formation_losses.mean()
     model.train()
-    return out
+    return out, out_main_losses, out_formation_losses
 
 class Head(nn.Module):
     """ one head of custom attention """
@@ -139,11 +146,12 @@ class MultiHeadAttention(nn.Module):
 class MultiHeadSwarmAttention(nn.Module):
     """ implements multiple heads of swarm attention in parallel in an efficient way """
 
-    def __init__(self, num_heads, head_size):
+    def __init__(self, num_heads, head_size, target_distance=formation_target_distance):
         super().__init__()
         assert n_embd % num_heads == 0 # make sure n_embd is divisible by num_heads
         self.num_heads = num_heads
         self.head_size = head_size
+        self.target_distance = target_distance # target distance for the formation loss
 
         self.identity_all = nn.Linear(n_embd, n_embd, bias=False)
         self.influence_all = nn.Linear(n_embd, n_embd, bias=False)
@@ -184,7 +192,32 @@ class MultiHeadSwarmAttention(nn.Module):
         
         out = self.dropout(self.proj(out))
         return out
+    
+    def compute_formation_loss(self, embeddings):
+        """
+        Computes a loss that encourages neighboring token embeddings to maintain
+        a specific Euclidean distance.
 
+        This acts as a geometric regularizer. It should be computed on the
+        output of the layer and added to the main training loss.
+        
+        Args:
+            embeddings (torch.Tensor): The output embeddings of the shape
+                                       (batch_size, seq_len, head_size).
+
+        Returns:
+            torch.Tensor: A scalar loss value.
+        """
+        # Calculate squared Euclidean distances between adjacent tokens
+        shifted_embeddings = F.pad(embeddings, (0, 0, 1, 0))[:, :-1, :] # shift right by 1
+        distances_sq = ((embeddings - shifted_embeddings) ** 2).sum(dim=-1) # (B, T)
+        
+        # The loss is the mean squared error between the actual squared
+        # distances and the target squared distance.
+        loss = F.mse_loss(distances_sq[:, 1:], torch.full_like(distances_sq[:, 1:], self.target_distance**2)) # ignore first token
+        #loss = loss / self.head_size # normalize by head size to keep loss scale consistent
+        loss = loss / self.num_heads # normalize by number of heads to keep loss scale consistent
+        return loss
 
 class FeedFoward(nn.Module):
     """ a simple linear layer followed by a non-linearity """
@@ -210,14 +243,28 @@ class Block(nn.Module):
         head_size = n_embd // n_head
         #self.sa = MultiHeadAttention(n_head, head_size)
         self.sa = MultiHeadSwarmAttention(n_head, head_size)
+        #self.sa = ApexSwarmAttention(n_head, head_size)
         self.ffwd = FeedFoward(n_embd)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        x = self.sa(self.ln1(x)) + x # residual connection
-        x = x + self.ffwd(self.ln2(x))
-        return x
+        att_x = self.sa(self.ln1(x))
+        formation_loss = self.compute_formation_loss(att_x) # compute formation loss on the attention output
+        x = att_x + x # residual connection
+        #formation_loss = self.compute_formation_loss(x)
+        x_ln2 = self.ln2(x)
+        #formation_loss = self.compute_formation_loss(x_ln2)
+        x = x + self.ffwd(x_ln2)
+        #formation_loss = self.compute_formation_loss(x)
+        return x, formation_loss
+    
+    def compute_formation_loss(self, x):
+        # Delegate to the attention layer's formation loss computation
+        if hasattr(self.sa, 'compute_formation_loss'):
+            return self.sa.compute_formation_loss(x)
+        else:
+            return torch.tensor(0.0).to(x.device)
 
 class GPTLanguageModel(nn.Module):
 
@@ -226,7 +273,9 @@ class GPTLanguageModel(nn.Module):
         # each token directly reads off the logits for the next token from a lookup table
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         #self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
+        #self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)])
+        self.blocks = nn.ModuleList([Block(n_embd, n_head=n_head) for _ in range(n_layer)]) # use ModuleList to access individual blocks
+
         self.ln_f = nn.LayerNorm(n_embd) # final layer norm
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
@@ -248,19 +297,34 @@ class GPTLanguageModel(nn.Module):
         tok_emb = self.token_embedding_table(idx) # (B,T,C)
         #pos_emb = self.position_embedding_table(torch.arange(T, device=device)) # (T,C)
         x = tok_emb #+ pos_emb # (B,T,C)
-        x = self.blocks(x) # (B,T,C)
+
+        # Step 2: Manually iterate through the blocks
+        total_formation_loss = torch.tensor([0.0]).to(device) # initialize formation loss
+        for block in self.blocks:
+            x, formation_loss = block(x)
+            # If the block is a Swarm Block, compute and accumulate its formation loss
+            if hasattr(block, 'compute_formation_loss'): # check if the method exists
+                total_formation_loss += formation_loss
+                
+
         x = self.ln_f(x) # (B,T,C)
         logits = self.lm_head(x) # (B,T,vocab_size)
 
         if targets is None:
             loss = None
+            main_loss = None
+            total_formation_loss = None
         else:
             B, T, C = logits.shape
             logits = logits.view(B*T, C)
             targets = targets.view(B*T)
-            loss = F.cross_entropy(logits, targets)
+            main_loss = F.cross_entropy(logits, targets)
 
-        return logits, loss
+            # Step 3: Combine the main loss with the formation loss
+            # The weight is a crucial hyperparameter to balance the two objectives.
+            loss = main_loss + formation_loss_weight * total_formation_loss
+
+        return logits, loss, main_loss, total_formation_loss
 
     def generate(self, idx, max_new_tokens):
         # idx is (B, T) array of indices in the current context
@@ -268,7 +332,7 @@ class GPTLanguageModel(nn.Module):
             # crop idx to the last block_size tokens
             idx_cond = idx[:, -block_size:]
             # get the predictions
-            logits, loss = self(idx_cond)
+            logits,_,_,_ = self(idx_cond)
             # focus only on the last time step
             logits = logits[:, -1, :] # becomes (B, C)
             # apply softmax to get probabilities
@@ -298,9 +362,16 @@ for iter in range(max_iters):
 
     # every once in a while evaluate the loss on train and val sets
     if iter % eval_interval == 0 or iter == max_iters - 1:
-        losses = estimate_loss()
+        losses, main_losses, formation_losses = estimate_loss()
         curr_time = time.perf_counter() - start_time
-        one_log = f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, time {curr_time:.2f} s"
+        one_log = (
+            f"step {iter}: "
+            f"train loss {losses['train']:.4f} "
+            f"(main: {main_losses['train']:.4f}, form: {formation_losses['train']:.4f}), "
+            f"val loss {losses['val']:.4f} "
+            f"(main: {main_losses['val']:.4f}, form: {formation_losses['val']:.4f}), "
+            f"time {curr_time:.2f} s"
+        )
         print(one_log)
         logs.append(one_log)
         # save the model if the validation loss is the best we've seen so far
@@ -324,7 +395,7 @@ for iter in range(max_iters):
     xb, yb = get_batch('train')
 
     # evaluate the loss
-    logits, loss = model(xb, yb)
+    logits, loss, main_loss, formation_loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True) # reset gradients
     loss.backward()
     if grad_clip != 0.0:

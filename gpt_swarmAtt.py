@@ -10,7 +10,7 @@ out_dir = 'swarmAtt_checkpoints'
 always_save_checkpoint = False # if True, always save a checkpoint after each eval
 
 # adamw optimizer
-learning_rate = 3e-4 # max learning rate
+learning_rate = 2e-4 # max learning rate
 max_iters = 3000 # total number of training iterations
 weight_decay = 1e-2
 beta1 = 0.9
@@ -29,17 +29,19 @@ min_lr = learning_rate/10 # minimum learning rate, should be ~= learning_rate/10
 """
 
 # hyperparameters
-batch_size = 32 # 64 # how many independent sequences will we process in parallel?
+batch_size = 64 # 64 # how many independent sequences will we process in parallel?
 block_size = 256 # 256 # what is the maximum context length for predictions?
-n_embd = 32*4 # 64*4 
-n_head = 4 # 8
-n_layer = 6 # 14
+n_embd = 64*4 # 64*4 
+n_head = 8 # 8
+n_layer = 14 # 14
 #inf_steps = list(range(1,5)) + [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 720] # try 1,2,3,8,16,32
 #inf_steps = range(1,n_head+1) # stride in the influence in the different heads
 inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
-formation_loss_weight = 100 # weight of the formation loss in the total loss
-formation_target_distance = 0.001 # 1 (tested and does not improve wrt to without, should I set them to be close? like 1e-3?) # target distance for the formation loss
+formation_loss_weight = 0.2 # weight of the formation loss in the total loss
+formation_target_distance = 1e-2 # target distance for the formation loss
+# 1 (tested and does not improve wrt to without, should I set them to be close? like 1e-3?) 
+# 0.001 (tested and improves wrt to without, when loss is computed after attention and before residual)
 # ------------
 
 # -----------------------------------------------------------------------------

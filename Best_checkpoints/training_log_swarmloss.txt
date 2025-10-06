@@ -1,19 +1,19 @@
-step 0: train loss 4.1844 (main: 4.1835, form: 0.0176), val loss 4.1831 (main: 4.1822, form: 0.0181), time 64.30 s
-step 200: train loss 1.7406 (main: 1.7389, form: 0.0337), val loss 1.8747 (main: 1.8730, form: 0.0355), time 273.16 s
-step 400: train loss 1.5342 (main: 1.5328, form: 0.0263), val loss 1.7216 (main: 1.7203, form: 0.0267), time 482.05 s
-step 600: train loss 1.4451 (main: 1.4439, form: 0.0247), val loss 1.6359 (main: 1.6346, form: 0.0251), time 691.01 s
-step 800: train loss 1.3855 (main: 1.3843, form: 0.0234), val loss 1.5845 (main: 1.5833, form: 0.0239), time 899.83 s
-step 1000: train loss 1.3402 (main: 1.3391, form: 0.0231), val loss 1.5497 (main: 1.5485, form: 0.0236), time 1109.28 s
-step 1200: train loss 1.3021 (main: 1.3009, form: 0.0230), val loss 1.5234 (main: 1.5222, form: 0.0233), time 1318.57 s
-step 1400: train loss 1.2704 (main: 1.2693, form: 0.0233), val loss 1.5092 (main: 1.5080, form: 0.0238), time 1527.99 s
-step 1600: train loss 1.2441 (main: 1.2428, form: 0.0250), val loss 1.4986 (main: 1.4973, form: 0.0252), time 1836.33 s
-step 1800: train loss 1.2232 (main: 1.2219, form: 0.0257), val loss 1.4850 (main: 1.4837, form: 0.0259), time 2159.42 s
-step 2000: train loss 1.1926 (main: 1.1913, form: 0.0258), val loss 1.4843 (main: 1.4830, form: 0.0260), time 2475.65 s
-step 2200: train loss 1.1720 (main: 1.1707, form: 0.0262), val loss 1.4657 (main: 1.4644, form: 0.0264), time 2802.02 s
-step 2400: train loss 1.1502 (main: 1.1489, form: 0.0263), val loss 1.4680 (main: 1.4667, form: 0.0265), time 3118.68 s
-step 2600: train loss 1.1313 (main: 1.1299, form: 0.0263), val loss 1.4652 (main: 1.4639, form: 0.0264), time 3423.06 s
-step 2800: train loss 1.1178 (main: 1.1165, form: 0.0259), val loss 1.4765 (main: 1.4752, form: 0.0261), time 3752.09 s
-step 2999: train loss 1.0951 (main: 1.0938, form: 0.0255), val loss 1.4769 (main: 1.4756, form: 0.0256), time 4086.79 s
+step 0: train loss 4.1844 (main: 4.1835, form: 0.0176), val loss 4.1831 (main: 4.1822, form: 0.0181), time 64.81 s
+step 200: train loss 1.7398 (main: 1.7381, form: 0.0336), val loss 1.8739 (main: 1.8722, form: 0.0354), time 275.28 s
+step 400: train loss 1.5342 (main: 1.5329, form: 0.0263), val loss 1.7210 (main: 1.7197, form: 0.0267), time 485.63 s
+step 600: train loss 1.4460 (main: 1.4448, form: 0.0246), val loss 1.6366 (main: 1.6353, form: 0.0251), time 695.51 s
+step 800: train loss 1.3849 (main: 1.3837, form: 0.0234), val loss 1.5840 (main: 1.5828, form: 0.0240), time 905.63 s
+step 1000: train loss 1.3404 (main: 1.3392, form: 0.0232), val loss 1.5507 (main: 1.5496, form: 0.0237), time 1114.30 s
+step 1200: train loss 1.3030 (main: 1.3018, form: 0.0230), val loss 1.5247 (main: 1.5236, form: 0.0233), time 1323.98 s
+step 1400: train loss 1.2710 (main: 1.2699, form: 0.0234), val loss 1.5096 (main: 1.5084, form: 0.0237), time 1533.13 s
+step 1600: train loss 1.2432 (main: 1.2420, form: 0.0247), val loss 1.4962 (main: 1.4950, form: 0.0250), time 1743.56 s
+step 1800: train loss 1.2202 (main: 1.2190, form: 0.0255), val loss 1.4840 (main: 1.4828, form: 0.0257), time 1953.59 s
+step 2000: train loss 1.1931 (main: 1.1918, form: 0.0266), val loss 1.4816 (main: 1.4803, form: 0.0266), time 2163.72 s
+step 2200: train loss 1.1697 (main: 1.1684, form: 0.0260), val loss 1.4638 (main: 1.4625, form: 0.0262), time 2371.96 s
+step 2400: train loss 1.1530 (main: 1.1516, form: 0.0265), val loss 1.4729 (main: 1.4716, form: 0.0266), time 2580.79 s
+step 2600: train loss 1.1314 (main: 1.1301, form: 0.0263), val loss 1.4671 (main: 1.4658, form: 0.0264), time 2874.38 s
+step 2800: train loss 1.1181 (main: 1.1168, form: 0.0260), val loss 1.4791 (main: 1.4778, form: 0.0260), time 3165.41 s
+step 2999: train loss 1.0945 (main: 1.0933, form: 0.0257), val loss 1.4738 (main: 1.4725, form: 0.0259), time 3373.34 s
 
 Model Hyperparameters (config):
 out_dir: swarmAtt_checkpoints

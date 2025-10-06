@@ -148,13 +148,12 @@ class MultiHeadAttention(nn.Module):
 class MultiHeadSwarmAttention(nn.Module):
     """ implements multiple heads of swarm attention in parallel in an efficient way """
 
-    def __init__(self, num_heads, head_size, target_distance=formation_target_distance, min_similarity=0.1): #0.2
+    def __init__(self, num_heads, head_size, target_distance=formation_target_distance):
         super().__init__()
         assert n_embd % num_heads == 0 # make sure n_embd is divisible by num_heads
         self.num_heads = num_heads
         self.head_size = head_size
         self.target_distance = target_distance # target distance for the formation loss
-        self.min_similarity = min_similarity # minimum similarity to prevent collapse
 
         self.identity_all = nn.Linear(n_embd, n_embd, bias=False)
         self.influence_all = nn.Linear(n_embd, n_embd, bias=False)
@@ -226,8 +225,9 @@ class MultiHeadSwarmAttention(nn.Module):
         emb_norm = F.normalize(embeddings, p=2, dim=-1)
         similarities = torch.sum(emb_norm[:, :-1] * emb_norm[:, 1:], dim=-1)  # (B, T-1)
         similarity_variance = torch.var(similarities, dim=-1).mean()  # Average variance across batch
-        collapse_penalty = torch.relu(self.min_similarity - similarities.mean())
-        loss = similarity_variance + 0.0 * collapse_penalty # 0.1 add penalty to prevent collapse
+        #collapse_penalty = torch.relu(self.min_similarity - similarities.mean())
+        collapse_penalty = torch.relu(similarities.mean() - 0.7) # penalize too high similarity (collapse)
+        loss = similarity_variance + 0.1 * collapse_penalty # 0.1 add penalty to prevent collapse
 
         #loss = loss / self.head_size # normalize by head size to keep loss scale consistent
         loss = loss / self.num_heads # normalize by number of heads to keep loss scale consistent

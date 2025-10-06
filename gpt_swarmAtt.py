@@ -38,8 +38,8 @@ n_layer = 14 # 14
 #inf_steps = range(1,n_head+1) # stride in the influence in the different heads
 inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
-formation_loss_weight = 0.2 # weight of the formation loss in the total loss
-formation_target_distance = 1e-2 # target distance for the formation loss
+formation_loss_weight = 0.05 # weight of the formation loss in the total loss
+formation_target_distance = 0 # target distance for the formation loss
 # 1 (tested and does not improve wrt to without, should I set them to be close? like 1e-3?) 
 # 0.001 (tested and improves wrt to without, when loss is computed after attention and before residual)
 # ------------
@@ -148,12 +148,13 @@ class MultiHeadAttention(nn.Module):
 class MultiHeadSwarmAttention(nn.Module):
     """ implements multiple heads of swarm attention in parallel in an efficient way """
 
-    def __init__(self, num_heads, head_size, target_distance=formation_target_distance):
+    def __init__(self, num_heads, head_size, target_distance=formation_target_distance, min_similarity=0.1): #0.2
         super().__init__()
         assert n_embd % num_heads == 0 # make sure n_embd is divisible by num_heads
         self.num_heads = num_heads
         self.head_size = head_size
         self.target_distance = target_distance # target distance for the formation loss
+        self.min_similarity = min_similarity # minimum similarity to prevent collapse
 
         self.identity_all = nn.Linear(n_embd, n_embd, bias=False)
         self.influence_all = nn.Linear(n_embd, n_embd, bias=False)
@@ -211,14 +212,26 @@ class MultiHeadSwarmAttention(nn.Module):
             torch.Tensor: A scalar loss value.
         """
         # Calculate squared Euclidean distances between adjacent tokens
-        shifted_embeddings = F.pad(embeddings, (0, 0, 1, 0))[:, :-1, :] # shift right by 1
-        distances_sq = ((embeddings - shifted_embeddings) ** 2).sum(dim=-1) # (B, T)
+        #shifted_embeddings = F.pad(embeddings, (0, 0, 1, 0))[:, :-1, :] # shift right by 1
+        #distances_sq = ((embeddings - shifted_embeddings) ** 2).sum(dim=-1) # (B, T)
         
+        #loss = torch.var(distances_sq[:, 1:])
+
         # The loss is the mean squared error between the actual squared
         # distances and the target squared distance.
-        loss = F.mse_loss(distances_sq[:, 1:], torch.full_like(distances_sq[:, 1:], self.target_distance**2)) # ignore first token
+        #loss = F.mse_loss(distances_sq[:, 1:], torch.full_like(distances_sq[:, 1:], self.target_distance**2)) # ignore first token
+        
+        # PRIMARY OBJECTIVE: Minimize variance of similarities
+        # This encourages consistent relationships without fixing what they should be
+        emb_norm = F.normalize(embeddings, p=2, dim=-1)
+        similarities = torch.sum(emb_norm[:, :-1] * emb_norm[:, 1:], dim=-1)  # (B, T-1)
+        similarity_variance = torch.var(similarities, dim=-1).mean()  # Average variance across batch
+        collapse_penalty = torch.relu(self.min_similarity - similarities.mean())
+        loss = similarity_variance + 0.0 * collapse_penalty # 0.1 add penalty to prevent collapse
+
         #loss = loss / self.head_size # normalize by head size to keep loss scale consistent
         loss = loss / self.num_heads # normalize by number of heads to keep loss scale consistent
+
         return loss
 
 class FeedFoward(nn.Module):

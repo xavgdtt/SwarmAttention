@@ -3,42 +3,39 @@ import torch.nn as nn
 from torch.nn import functional as F
 import time
 import os
+import math
 
 # conf
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 out_dir = 'swarmAtt_checkpoints'
 always_save_checkpoint = False # if True, always save a checkpoint after each eval
 
-# adamw optimizer
-learning_rate = 2e-4 # max learning rate
-max_iters = 3000 # total number of training iterations
-weight_decay = 1e-2
+# optimization parameters (adamw)
+learning_rate = 1e-3 # with baby networks can afford to go a bit higher
+max_iters = 5000
+lr_decay_iters = 5000 # make equal to max_iters usually
+min_lr = 1e-4 # learning_rate / 10 usually
 beta1 = 0.9
-beta2 = 0.999
-grad_clip = 0.0 # 1.0 # clip gradients at this value, or disable if == 0.0
-dropout = 0.2
+beta2 = 0.99 # make a bit bigger because number of tokens per iter is small
+warmup_iters = 100 # how many steps to warm up for
+grad_clip = 0.0 # clip gradients at this value, or 0.0 to disable
+weight_decay = 1e-2
+# ------------
 
 eval_iters = 200 # how many batches to evalute loss over
 eval_interval = 200 # how often to evaluate the loss
-"""
-# learning rate decay settings
-decay_lr = True # whether to decay the learning rate
-warmup_iters = 200 # how many steps to warm up for
-lr_decay_iters = max_iters # should be ~= max_iters per Chinchilla
-min_lr = learning_rate/10 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-"""
 
 # hyperparameters
 batch_size = 64 # 64 # how many independent sequences will we process in parallel?
 block_size = 256 # 256 # what is the maximum context length for predictions?
-n_embd = 64*4 # 64*4 
-n_head = 8 # 8
-n_layer = 14 # 14
+n_embd = 64*6 # 64*4 
+n_head = 6 # 8
+n_layer = 6 # 14
 #inf_steps = list(range(1,5)) + [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 720] # try 1,2,3,8,16,32
 #inf_steps = range(1,n_head+1) # stride in the influence in the different heads
 inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
-formation_loss_weight = 0.05 # weight of the formation loss in the total loss
+formation_loss_weight = 0.0 #0.05 # weight of the formation loss in the total loss
 formation_target_distance = 0 # target distance for the formation loss
 # 1 (tested and does not improve wrt to without, should I set them to be close? like 1e-3?) 
 # 0.001 (tested and improves wrt to without, when loss is computed after attention and before residual)
@@ -99,7 +96,35 @@ def estimate_loss():
     model.train()
     return out, out_main_losses, out_formation_losses
 
-class Head(nn.Module):
+class HeadStandardAttention(nn.Module):
+    """ one head of self-attention """
+
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # input of size (batch, time-step, channels)
+        # output of size (batch, time-step, head size)
+        B,T,C = x.shape
+        k = self.key(x)   # (B,T,hs)
+        q = self.query(x) # (B,T,hs)
+        # compute attention scores ("affinities")
+        wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        wei = F.softmax(wei, dim=-1) # (B, T, T)
+        wei = self.dropout(wei)
+        # perform the weighted aggregation of the values
+        v = self.value(x) # (B,T,hs)
+        out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
+        return out
+
+class HeadSwarmAttention(nn.Module):
     """ one head of custom attention """
 
     def __init__(self, head_size, shift = 1):
@@ -135,7 +160,7 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, num_heads, head_size):
         super().__init__()
-        self.heads = nn.ModuleList([Head(head_size,shift) for shift in inf_steps[:num_heads]]) # different shift for each head
+        self.heads = nn.ModuleList([HeadStandardAttention(head_size) for _ in range(num_heads)]) # different shift for each head
         self.proj = nn.Linear(head_size * num_heads, n_embd)
         self.dropout = nn.Dropout(dropout)
 
@@ -256,15 +281,16 @@ class Block(nn.Module):
         # n_embd: embedding dimension, n_head: the number of heads we'd like
         super().__init__()
         head_size = n_embd // n_head
-        #self.sa = MultiHeadAttention(n_head, head_size)
-        self.sa = MultiHeadSwarmAttention(n_head, head_size)
+        self.saStandard = MultiHeadAttention(n_head, head_size)
+        #self.saSwarm = MultiHeadSwarmAttention(n_head, head_size)
         #self.sa = ApexSwarmAttention(n_head, head_size)
         self.ffwd = FeedFoward(n_embd)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        att_x = self.sa(self.ln1(x))
+        # att_x = self.sa(self.ln1(x))
+        att_x = self.saStandard(self.ln1(x)) #+ self.saSwarm(self.ln1(x))
         formation_loss = self.compute_formation_loss(att_x) # compute formation loss on the attention output
         x = att_x + x # residual connection
         #formation_loss = self.compute_formation_loss(x)
@@ -275,9 +301,12 @@ class Block(nn.Module):
         return x, formation_loss
     
     def compute_formation_loss(self, x):
+        ### remove this line later!!!
+        return torch.tensor(0.0).to(x.device)
+        ###
         # Delegate to the attention layer's formation loss computation
-        if hasattr(self.sa, 'compute_formation_loss'):
-            return self.sa.compute_formation_loss(x)
+        if hasattr(self.saSwarm, 'compute_formation_loss'):
+            return self.saSwarm.compute_formation_loss(x)
         else:
             return torch.tensor(0.0).to(x.device)
 
@@ -358,6 +387,20 @@ class GPTLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 
+# learning rate decay scheduler (cosine with warmup)
+def get_lr(it):
+    # 1) linear warmup for warmup_iters steps
+    if it < warmup_iters:
+        return learning_rate * (it + 1) / (warmup_iters + 1)
+    # 2) if it > lr_decay_iters, return min learning rate
+    if it > lr_decay_iters:
+        return min_lr
+    # 3) in between, use cosine decay down to min learning rate
+    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+    return min_lr + coeff * (learning_rate - min_lr)
+
 model = GPTLanguageModel()
 m = model.to(device)
 # print the number of parameters in the model
@@ -365,10 +408,6 @@ print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
 
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
                   vocab_size=None, dropout=dropout)
-
-
-# create a PyTorch optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay)
 
 start_time = time.perf_counter()
 best_val_loss = 1e9
@@ -408,6 +447,9 @@ for iter in range(max_iters):
 
     # sample a batch of data
     xb, yb = get_batch('train')
+
+    # create a PyTorch optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=get_lr(iter), betas=(beta1, beta2), weight_decay=weight_decay)
 
     # evaluate the loss
     logits, loss, main_loss, formation_loss = model(xb, yb)

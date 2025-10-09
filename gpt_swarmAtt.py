@@ -28,14 +28,14 @@ eval_interval = 200 # how often to evaluate the loss
 # hyperparameters
 batch_size = 64 # 64 # how many independent sequences will we process in parallel?
 block_size = 256 # 256 # what is the maximum context length for predictions?
-n_embd = 64*6 # 64*4 
-n_head = 6 # 8
-n_layer = 6 # 14
+n_embd = 64*4 # 64*4 
+n_head = 8 # 8
+n_layer = 14 # 14
 #inf_steps = list(range(1,5)) + [8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 720] # try 1,2,3,8,16,32
 #inf_steps = range(1,n_head+1) # stride in the influence in the different heads
 inf_steps = [1,2,3,4,1,2,3,4]
 head_steps = 1 # number of repeated steps of influence in one head
-formation_loss_weight = 0.0 #0.05 # weight of the formation loss in the total loss
+formation_loss_weight = 0.05 #0.05 # weight of the formation loss in the total loss
 formation_target_distance = 0 # target distance for the formation loss
 # 1 (tested and does not improve wrt to without, should I set them to be close? like 1e-3?) 
 # 0.001 (tested and improves wrt to without, when loss is computed after attention and before residual)
@@ -281,8 +281,8 @@ class Block(nn.Module):
         # n_embd: embedding dimension, n_head: the number of heads we'd like
         super().__init__()
         head_size = n_embd // n_head
-        self.saStandard = MultiHeadAttention(n_head, head_size)
-        #self.saSwarm = MultiHeadSwarmAttention(n_head, head_size)
+        #self.saStandard = MultiHeadAttention(n_head, head_size)
+        self.saSwarm = MultiHeadSwarmAttention(n_head, head_size)
         #self.sa = ApexSwarmAttention(n_head, head_size)
         self.ffwd = FeedFoward(n_embd)
         self.ln1 = nn.LayerNorm(n_embd)
@@ -290,7 +290,7 @@ class Block(nn.Module):
 
     def forward(self, x):
         # att_x = self.sa(self.ln1(x))
-        att_x = self.saStandard(self.ln1(x)) #+ self.saSwarm(self.ln1(x))
+        att_x = self.saSwarm(self.ln1(x))
         formation_loss = self.compute_formation_loss(att_x) # compute formation loss on the attention output
         x = att_x + x # residual connection
         #formation_loss = self.compute_formation_loss(x)
@@ -301,9 +301,6 @@ class Block(nn.Module):
         return x, formation_loss
     
     def compute_formation_loss(self, x):
-        ### remove this line later!!!
-        return torch.tensor(0.0).to(x.device)
-        ###
         # Delegate to the attention layer's formation loss computation
         if hasattr(self.saSwarm, 'compute_formation_loss'):
             return self.saSwarm.compute_formation_loss(x)

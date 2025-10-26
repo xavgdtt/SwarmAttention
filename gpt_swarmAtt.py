@@ -11,15 +11,18 @@ out_dir = 'swarmAtt_checkpoints'
 always_save_checkpoint = False # if True, always save a checkpoint after each eval
 
 # optimization parameters (adamw)
-learning_rate = 1e-3 # with baby networks can afford to go a bit higher
-max_iters = 5000
-lr_decay_iters = 5000 # make equal to max_iters usually
-min_lr = 1e-4 # learning_rate / 10 usually
+learning_rate = 3e-4
+max_iters = 3000
 beta1 = 0.9
-beta2 = 0.99 # make a bit bigger because number of tokens per iter is small
-warmup_iters = 100 # how many steps to warm up for
-grad_clip = 0.0 # clip gradients at this value, or 0.0 to disable
+beta2 = 0.999
+grad_clip = 1.0 # clip gradients at this value, or 0.0 to disable
+dropout = 0.2
 weight_decay = 1e-2
+# ---------- variable LR parameters
+variable_lr = True # turn variable learning rate on or off
+lr_decay_iters = 3000 # make equal to max_iters usually
+min_lr = 3e-5 # learning_rate / 10 usually
+warmup_iters = 100 # how many steps to warm up for
 # ------------
 
 eval_iters = 200 # how many batches to evalute loss over
@@ -406,6 +409,9 @@ print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
 model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
                   vocab_size=None, dropout=dropout)
 
+ # create a PyTorch optimizer
+optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=(beta1, beta2), weight_decay=weight_decay)
+
 start_time = time.perf_counter()
 best_val_loss = 1e9
 logs = []
@@ -445,8 +451,10 @@ for iter in range(max_iters):
     # sample a batch of data
     xb, yb = get_batch('train')
 
-    # create a PyTorch optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=get_lr(iter), betas=(beta1, beta2), weight_decay=weight_decay)
+    # update learning rate if using variable LR
+    if variable_lr:
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = get_lr(iter)
 
     # evaluate the loss
     logits, loss, main_loss, formation_loss = model(xb, yb)

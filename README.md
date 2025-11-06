@@ -1,6 +1,7 @@
 # SwarmAttention
 Experiments on merging swarm dynamics with attention mechanisms in transformers.
-Best results currently produced by the forked version with swarm loss. Work in progress.
+
+Best results currently produced by the *forked version with swarm loss*. Work in progress.
 
 ```
 ⚠️ This is open work, more developments and documentation to come!

@@ -6,7 +6,7 @@ Best results currently produced by the forked version with swarm loss. Work in p
 ⚠️ This is open work, more developments and documentation to come!
 ```
 
-## Basic Swarm Attention
+## Swarm Attention
 [gpt_swarmAtt.py](gpt_swarmAtt.py) trains a custom swarm-based GPT model that generates text based on the tiny Shakespeare dataset.
 
 Outperforms the [nanoGPT model](https://github.com/karpathy/nanoGPT) (implemented in [gpt_original.py](gpt_original.py)):
